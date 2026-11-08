@@ -1,0 +1,36 @@
+# Vigia da ponte do WhatsApp: confere a cada 5 min se ela está no ar e com o WhatsApp conectado.
+# Se não estiver depois de 4 tentativas (~3 min, para não alarmar durante uma publicação), a execução falha e o GitHub
+# manda e-mail ao dono. Um commit vazio por mês mantém o agendamento vivo (o GitHub desliga após 60 dias parado).
+name: vigia
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+    - cron: '17 12 1 * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  conferir:
+    if: github.event.schedule != '17 12 1 * *'
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Conferir a ponte
+        run: |
+          for i in 1 2 3 4; do
+            r=$(curl -s -m 20 https://ponte.apuracaoaberta.com.br/saude || true)
+            if echo "$r" | grep -q '"estado":"pronta"' && echo "$r" | grep -q '"whatsapp":"conectado"'; then
+              echo "ok (tentativa $i): $(echo "$r" | head -c 200)"; exit 0
+            fi
+            echo "tentativa $i falhou: $(echo "$r" | head -c 300)"; sleep 45
+          done
+          echo "::error::A ponte do WhatsApp está fora do ar ou com o WhatsApp desconectado. Confira https://ponte.apuracaoaberta.com.br/saude e o Railway."
+          exit 1
+  manter-vivo:
+    if: github.event.schedule == '17 12 1 * *'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: |
+          git config user.name vigia && git config user.email vigia@users.noreply.github.com
+          git commit --allow-empty -m "manter o agendamento ativo" && git push
